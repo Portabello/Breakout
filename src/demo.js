@@ -1,322 +1,194 @@
-var scene, camera, renderer, mesh;
+var scene, camera, renderer, mesh, block, ball;
 var meshFloor, ambientLight, light;
-const GRAVITY_RATE = -9.81;
 
 var keyboard = {};
-var player = { height:1.8, speed:0.5, turnSpeed:Math.PI*0.02, direction:0, downSpeed:0.0001 };
+var player = { height:1.8, speed:0.1, turnSpeed:Math.PI*0.02 };
+var ballDir = [0.2,0.89];
+var ballSpeed = 0.75;
 var USE_WIREFRAME = false;
-var pressed = 0;
-var stack = [];
-//pause = 0 means game is running
-//pause = 1 means game is paused
-var paused = 0;
-var menu;
-//0 -> alive | 1 -> dead
-var alive = 0;
-var timeDead =0;
-//stores last position of player before death
-var lastPosition;
-//stores position in the stack (for the block) the player is currently on
-var currentBlock = null;
-//player score
-var playerScore = 0;
-//player score text
-var playerScoreText;
 
-var pressEnterToReset;
-// 1 = game queued to be reset
-var gameReset = 0;
 
-function spawnPlayer(){
-	//var randPos = [(Math.random()*50)-25,(Math.random()*50)-25];
-	mesh = new THREE.Mesh(
-		new THREE.SphereGeometry(1,16,16),
-		new THREE.MeshPhongMaterial({color:0x8fc0e7, wireframe:USE_WIREFRAME})
+function makeWall(position, rotation){
+
+	var mesh = new THREE.Mesh(
+		new THREE.BoxGeometry(50.7,4,1),
+		new THREE.MeshPhongMaterial({color:0x00356a, wireframe:USE_WIREFRAME})
 	);
-	mesh.position.y += 0.65; // Move the player up 1 meter
-	mesh.position.x = 0;
-	mesh.position.z = 0;
+	mesh.position.x = position.x; 
+	mesh.position.y = position.y;
+	mesh.position.z = position.z;
+	mesh.rotation.x = rotation.x; 
+	mesh.rotation.y = rotation.y;
+	mesh.rotation.z = rotation.z;
 	mesh.receiveShadow = true;
 	mesh.castShadow = true;
-	mesh.add(camera);
 	scene.add(mesh);
-
 }
 
-function resetGame(){
-	//location.reload();
-	if(gameReset == 1){
-		gameReset = 0;
-		alive = 0;
-		mesh.position.x = 0;
-		mesh.position.y = 0.65;
-		mesh.position.z = 0;
-		paused = 0;
-		mesh.add(camera);
-		camera.position.set(-10, 10, -10);
-		//camera.lookAt(new THREE.Vector3(0,player.height,0));
-		camera.lookAt(mesh.position);
-		lastPosition = null;
-		player.speed=0.5;
-		player.direction=0; 
-		player.downSpeed=0.0001; 
-		playerScore =0;
-		resetBlocks();
-	}
+function spawnCube(){
+	var randPos = [(Math.random()*50)-25,(Math.random()*50)-25];
+	mesh = new THREE.Mesh(
+		new THREE.BoxGeometry(1,1,1),
+		new THREE.MeshPhongMaterial({color:0x0000FF, wireframe:USE_WIREFRAME})
+	);
+	mesh.position.y += 1; // Move the mesh up 1 meter
+	mesh.position.x = randPos[0];
+	mesh.position.z = randPos[1];
+	mesh.receiveShadow = true;
+	mesh.castShadow = true;
+	scene.add(mesh);
 }
 
-function resetBlocks(){
-	for(var i =0; i<stack.length; i++){
-		scene.remove(stack[i]);
-	}
-	stack = [];
-		for(var i=0; i<300; i++){
-			spawnBlock(i);
-			//console.log(stack.length);
-		}
+function spawnBall(){
+	ball = new THREE.Mesh(
+		new THREE.SphereGeometry(1,5,5),
+		new THREE.MeshPhongMaterial({color:0xdce9ef, wireframe:USE_WIREFRAME})
+	);
+	ball.position.y = 1; // Move the ball up 1 meter
+	ball.position.x = 1;
+	ball.position.z = 1;
+	ball.receiveShadow = true;
+	ball.castShadow = true;
+	scene.add(ball);
 }
 
-function updatePlayer(){
-	if ((player.direction) == 0)
-		mesh.position.x += player.speed * 0.5;
-	else
-		mesh.position.z += player.speed * 0.5;
-	if(alive ==0){
-		light.position.x = mesh.position.x-20;
-		light.position.z = mesh.position.z+20;
-	}
-	player.speed +=0.0001;
+function updateBall(){
+	ball.position.x += ballDir[0] * ballSpeed;
+	ball.position.z += ballDir[1] * ballSpeed;
 }
-function shiftBlocks(){
-	//scene.remove(stack[0]);
-	//stack.shift();
 
-	var rand = Math.floor(Math.random() * 2);
-	//spawnBlock(10);
-	var block = new THREE.Mesh(
-			new THREE.BoxGeometry(5,10,5),
-			new THREE.MeshPhongMaterial({color:0x397ec3, wireframe:USE_WIREFRAME})
-		);
-		//left block
-		if(rand == 0){
-			block.position.x = (stack[stack.length - 1].position.x) + 5.1;
-			block.position.z = (stack[stack.length - 1].position.z);
-		}
-		//right block
-		else{
-			block.position.z = (stack[stack.length - 1].position.z) + 5.1;
-			block.position.x = (stack[stack.length - 1].position.x) ;
-		}
-		//block.position.x = 2;
-		//block.position.z = 2;
-		block.position.y = -5;
-		block.receiveShadow = true;
-		block.castShadow = true;
-		//0 if the player has not hit the block
-		//1 if the player has hit the block
-		block.hit = 0;
-		//time after death before block starts falling
-		block.deathTimeout =0;
-		stack.push(block);
-		scene.add(stack.length);
-
-}
-//need to make stack that holds blocks in and when a new one comes in it pushes out old
-//this is so it can reference the previous blocks position
-function spawnBlock(index){
-	var block;
-	var rand = Math.floor(Math.random() * 2);
-	if(stack.length != 0){
-		block = new THREE.Mesh(
-			new THREE.BoxGeometry(5,10,5),
-			new THREE.MeshPhongMaterial({color:0x397ec3, wireframe:USE_WIREFRAME})
-		);
-		//left block
-		if(rand == 0){
-			block.position.x = (stack[stack.length - 1].position.x) + 5.1;
-			block.position.z = (stack[stack.length - 1].position.z);
-		}
-		//right block
-		else{
-			block.position.z = (stack[stack.length - 1].position.z) + 5.1;
-			block.position.x = (stack[stack.length - 1].position.x) ;
-		}
-		//block.position.x = 2;
-		//block.position.z = 2;
-		block.position.y = -5;
-		block.receiveShadow = true;
-		block.castShadow = true;
-		//0 if the player has not hit the block
-		//1 if the player has hit the block
-		block.hit = 0;
-		//time after death before block starts falling
-		block.deathTimeout =0;
-		stack.push(block);
-		scene.add(stack[index]);	
-		
-	}
-	else{
-		block = new THREE.Mesh(
-			new THREE.BoxGeometry(5,10,5),
-			new THREE.MeshPhongMaterial({color:0x397ec3, wireframe:USE_WIREFRAME})
-		);
-		block.position.x = 17.5;
-		block.position.z = 22.6;
-		block.position.y = -5;
-		block.hit = 0;
-		block.deathTimeout =0;
-		block.receiveShadow = true;
-		block.castShadow = true;
-		stack.push(block);
-		scene.add(stack[0]);
-		
+function cubeHit(){
+	distX = camera.position.x - mesh.position.x;
+	distZ = camera.position.z - mesh.position.z;
+	if((distX<1 && distX>-1) && (distZ<1 && distZ>-1)){
+		spawnCube();
+		//mesh.position.y += 1;
 	}
 }
 
-function checkBlockHit(){
-	var hit = 0;
-	if(mesh.position.x < 20 && mesh.position.z < 20){
-		hit =1;
+function ballHit(){
+	//bot wall reflection
+	var botWallNorm = [0,-1];
+	if(ball.position.x <=25 && ball.position.x >=-25 && ball.position.z >= 24){
+		var norm = -2 * ((botWallNorm[0]*ballDir[0]) + (botWallNorm[1]*ballDir[1]));
+		botWallNorm = [botWallNorm[0]*norm, botWallNorm[1]*norm];
+		//ballDir = [ballDir[0]+botWallNorm[0], ballDir[1]+botWallNorm[1]];
+		ball.position.x = 0;
+		ball.position.z = 0;
+		ballDir = [0,1];
 	}
-		for(var i=0; i<300; i++){
-			if(mesh.position.x <= stack[i].position.x+2.7 && mesh.position.x >= stack[i].position.x-2.7){
-				if(mesh.position.z <= stack[i].position.z+2.7 && mesh.position.z >= stack[i].position.z-2.7){
-					if(stack[i].hit == 0){
-						playerScore++
-						stack[i].hit = 1;
-					}
-					hit = 1;
-				}
-			}
-		}
-
-	if(hit == 0){
-		if(lastPosition == null){
-			mesh.remove(camera);
-			lastPosition = new THREE.Vector3(mesh.position.x, mesh.position.y, mesh.position.z);
-		}
-		alive = 1;
+	//top wall reflection
+	var topWallNorm = [0,1];
+	if(ball.position.x <=25 && ball.position.x >=-25 && ball.position.z <= -24){
+		var norm = -2 * ((topWallNorm[0]*ballDir[0]) + (topWallNorm[1]*ballDir[1]));
+		topWallNorm = [topWallNorm[0]*norm, topWallNorm[1]*norm];
+		ballDir = [ballDir[0]+topWallNorm[0], ballDir[1]+topWallNorm[1]];
 	}
-
-}
-function textPRESSENTERTORESETGAME(on){
-	if(on == 1){
-		pressEnterToReset = document.createElement('div');
-		pressEnterToReset.style.position = 'absolute';
-		//pressEnterToReset.style.zIndex = 1;    // if you still don't see the label, try uncommenting this
-		pressEnterToReset.style.width = 100;
-		pressEnterToReset.style.height = 100;
-		pressEnterToReset.style.opacity = 0.7;
-		pressEnterToReset.style.fontSize = "xx-large";
-		pressEnterToReset.style.fontFamily = "Impact,Charcoal,sans-serif";
-		pressEnterToReset.innerHTML = "PRESS ENTER TO RESET GAME" ;
-		//pressEnterToReset.style.top = window.innerWidth/2 + 'px';
-		//pressEnterToReset.style.left = window.innerHeight/2 + 'px';
-
-		pressEnterToReset.style.top = window.innerHeight/2 + 'px';
-		pressEnterToReset.style.left = window.innerWidth/2-150 + 'px';
-		document.body.appendChild(pressEnterToReset);
+	//right wall reflection
+	var rightWallNorm = [-1,0];
+	if(ball.position.z <=25 && ball.position.z >=-25 && ball.position.x >= 24){
+		var norm = -2 * ((rightWallNorm[0]*ballDir[0]) + (rightWallNorm[1]*ballDir[1]));
+		rightWallNorm = [rightWallNorm[0]*norm, rightWallNorm[1]*norm];
+		ballDir = [ballDir[0]+rightWallNorm[0], ballDir[1]+rightWallNorm[1]];
 	}
-	else{
-		if(pressEnterToReset != undefined)
-		pressEnterToReset.innerHTML = "";
+	//left wall reflection
+	var leftWallNorm = [1,0];
+	if(ball.position.z <=25 && ball.position.z >=-25 && ball.position.x <= -24){
+		var norm = -2 * ((leftWallNorm[0]*ballDir[0]) + (leftWallNorm[1]*ballDir[1]));
+		leftWallNorm = [leftWallNorm[0]*norm, leftWallNorm[1]*norm];
+		ballDir = [ballDir[0]+leftWallNorm[0], ballDir[1]+leftWallNorm[1]];
 	}
 }
-function textPAUSED(on){
-	if(on == 1){
-		pressEnterToReset = document.createElement('div');
-		pressEnterToReset.style.position = 'absolute';
-		//pressEnterToReset.style.zIndex = 1;    // if you still don't see the label, try uncommenting this
-		pressEnterToReset.style.width = 100;
-		pressEnterToReset.style.height = 100;
-		pressEnterToReset.style.opacity = 0.9;
-		pressEnterToReset.style.fontSize = "xx-large";
-		pressEnterToReset.style.fontFamily = "Impact,Charcoal,sans-serif";
-		pressEnterToReset.innerHTML = "PAUSED" ;
-		//pressEnterToReset.style.top = window.innerWidth/2 + 'px';
-		//pressEnterToReset.style.left = window.innerHeight/2 + 'px';
 
-		pressEnterToReset.style.top = window.innerHeight/2-50 + 'px';
-		pressEnterToReset.style.left = window.innerWidth/2-37 + 'px';
-		document.body.appendChild(pressEnterToReset);
-	}
-	else{
-		if(pressEnterToReset != undefined)
-		pressEnterToReset.innerHTML = "";
+function playerHit(){
+	//determine norm
+	var temp = Math.abs((ball.position.x)-(block.position.x+5))/10;
+	//console.log(temp);
+	var temp1 = (temp*180);
+	var temp1Rad = temp1 * (180/Math.PI);
+	var norm0 = Math.cos(temp1Rad);
+	var norm1 = Math.sin(temp1Rad);
+
+	//console.log(norm0,norm1);
+	var playerNorm = [norm0, norm1];
+	if(ball.position.x <=(block.position.x+5) && ball.position.x >=(block.position.x-5) && ball.position.z >= 21.5){
+		//var norm = -2 * ((playerNorm[0]*ballDir[0]) + (playerNorm[1]*ballDir[1]));
+		//playerNorm = [playerNorm[0]*norm, playerNorm[1]*norm];
+		//ballDir = [ballDir[0]+playerNorm[0], ballDir[1]+playerNorm[1]];
+		//console.log(norm0,norm1);
+		ballDir = playerNorm;
 	}
 }
-//determines score by iterating through fifo stack
-function score(){
-	if(playerScoreText == null){
-	playerScoreText = document.createElement('div');
-	playerScoreText.style.position = 'absolute';
-	//playerScoreText.style.zIndex = 1;    // if you still don't see the label, try uncommenting this
-	playerScoreText.style.width = 100;
-	playerScoreText.style.height = 100;
-	playerScoreText.style.opacity = 0.6;
-	playerScoreText.style.fontSize = "xx-large";
-	playerScoreText.style.fontFamily = "Impact,Charcoal,sans-serif";
-	playerScoreText.innerHTML = "SCORE:" + playerScore;
-	//playerScoreText.style.top = window.innerWidth/2 + 'px';
-	//playerScoreText.style.left = window.innerHeight/2 + 'px';
 
-	playerScoreText.style.top = 50 + 'px';
-	playerScoreText.style.left = window.innerWidth-160 + 'px';
-	document.body.appendChild(playerScoreText);
-	}
-	else{
-		playerScoreText.innerHTML = "SCORE:" + playerScore;
-	}
-}
 
 function init(){
 	scene = new THREE.Scene();
+	scene.background = new THREE.Color(0x3286aa);
+	camera = new THREE.PerspectiveCamera(45, 1280/720, 0.1, 1000);
+	var width = window.innerWidth;
+	var height = window.innerHeight;
+	//camera = new THREE.OrthographicCamera(width / - 2, width / 2, height / 2, height / - 2, 1, 1000);
+	//spawnCube();	
+	xyzAxis();
+	spawnBall();
 
-	camera = new THREE.PerspectiveCamera(90, window.innerWidth/window.innerHeight, 0.1, 1000);
-	//var width = 40;
-	//var height = 40;
-	//camera = new THREE.OrthographicCamera( width / - 2, width / 2, height / 2, height / - 2, 1, 1000 );
-	//xyzAxis();
-	spawnPlayer();
+	//spawn 4 walls
+	var wallPos = new THREE.Vector3(-25,0,0);
+	var wallRot = new THREE.Vector3(0,Math.PI/2,0);
+	makeWall(wallPos, wallRot);
+	wallPos.set(25,0,0);
+	makeWall(wallPos, wallRot);
+	wallPos.set(0,0,25);
+	wallRot.set(0,0,0);
+	makeWall(wallPos, wallRot);
+	wallPos.set(0,0,-25);
+	makeWall(wallPos, wallRot);
 
 
-	var startZone = new THREE.Mesh(
-		new THREE.PlaneGeometry(40,40, 50,50),
+	//FLOOR
+	meshFloor = new THREE.Mesh(
+		new THREE.PlaneGeometry(50,50, 50,50),
 		// MeshBasicMaterial does not react to lighting, so we replace with MeshPhongMaterial
-		new THREE.MeshPhongMaterial({color:0x397ec3, wireframe:USE_WIREFRAME})
+		new THREE.MeshPhongMaterial({color:0x3286aa, wireframe:USE_WIREFRAME})
 		// See threejs.org/examples/ for other material types
 	);
-	startZone.rotation.x -= Math.PI / 2;
-	startZone.position.y = 0;
+	meshFloor.rotation.x -= Math.PI / 2;
 	// Floor can have shadows cast onto it
-	startZone.receiveShadow = true;
-	scene.add(startZone);
+	meshFloor.receiveShadow = true;
+	scene.add(meshFloor);
+
+
+	//PLAYER BLOCK
+	block = new THREE.Mesh(
+		new THREE.BoxGeometry(10,3,1),
+		new THREE.MeshPhongMaterial({color:0x91bbd1, wireframe:USE_WIREFRAME})
+	);
+	block.position.x = 0;
+	block.position.z = 22;
+	block.receiveShadow = true;
+	block.castShadow = true;
+	scene.add(block);
 	
-	for(var i=0; i<300; i++){
-		spawnBlock(i);
-		//console.log(stack.length);
-	}
 	
 	// LIGHTS
 	ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
 	scene.add(ambientLight);
 	
-	light = new THREE.PointLight(0xffffff, 0.8, 600);
-	light.position.set(-10,60,10);
+	light = new THREE.PointLight(0xffffff, 0.8, 100);
+	light.position.set(0,20,0);
 	light.castShadow = true;
 	// Will not light anything closer than 0.1 units or further than 25 units
 	light.shadow.camera.near = 0.1;
-	light.shadow.camera.far = 15;
+	light.shadow.camera.far = 25;
 	scene.add(light);
 	
 	
-	camera.position.set(-10, 10, -10);
-	//camera.lookAt(new THREE.Vector3(0,player.height,0));
-	camera.lookAt(mesh.position);
+	camera.position.set(25, 25, 45);
+	camera.lookAt(new THREE.Vector3(0,0,0));
 	
 	renderer = new THREE.WebGLRenderer();
 	renderer.setSize(window.innerWidth, window.innerHeight);
-	renderer.setClearColor( 0xc7deed );
+	
 	// Enable Shadows in the Renderer
 	renderer.shadowMap.enabled = true;
 	renderer.shadowMap.type = THREE.BasicShadowMap;
@@ -325,134 +197,33 @@ function init(){
 	
 	animate();
 }
-function pause(){
-	//pauseMenu(1);
-	//renderer.render(scene, camera);
-	if(paused == 0){
-	requestAnimationFrame(animate);
-	}
-	if(paused == 1){
-	requestAnimationFrame(pause);
-	}
-}
 
-function pauseMenu(on){	
-	if(on == 1){
-		menu = new THREE.Mesh(
-			new THREE.BoxGeometry(15,15,15),
-			new THREE.MeshPhongMaterial({color:0x000000, wireframe:USE_WIREFRAME, transparent: true, opacity: 0.5})
-		);
-		//document.getElementById("paused").innerHTML = 5 + 6;
-
-		//menu.lookAt(camera);
-		if(alive == 0){
-			menu.position.x = mesh.position.x-4;
-			menu.position.z = mesh.position.z-4;
-			menu.position.y = mesh.position.y+4;
-		}
-		else if(alive == 1){
-			//console.log('x: ' + menu.position.x + ' y: '+menu.position.y+' z: '+menu.position.z);
-			menu.position.x = lastPosition.x-4;
-			menu.position.z = lastPosition.z-4;
-			menu.position.y = lastPosition.y+4;
-		}
-		//console.log(alive);
-		//console.log('x: ' + menu.position.x + ' y: '+menu.position.y+' z: '+menu.position.z);
-		//console.log('x: ' + lastPosition.x + ' y: '+lastPosition.y+' z: '+lastPosition.z);
-		menu.quaternion.copy(camera.quaternion);
-		//menu.rotation.x += Math.PI/4;
-		//menu.rotation.x -= Math.PI/4;
-		//menu.rotation.z += Math.PI/4;
-		
-		menu.receiveShadow = true;
-		menu.castShadow = true;
-		scene.add(menu);
-		if(alive == 1){
-			textPRESSENTERTORESETGAME(1);
-		}
-		else{
-			textPAUSED(1);
-		}
-	}
-	else{
-		textPRESSENTERTORESETGAME(0);
-		textPAUSED(0);
-		scene.remove(menu);
-	}
-	
-}
 function animate(){
-	if(paused == 0){
-		pauseMenu(0);
 	requestAnimationFrame(animate);
-	}
-	if(paused == 1){
-		pauseMenu(1);
-	requestAnimationFrame(pause);
-	}
 	//cubeHit();
 	//mesh.rotation.x += 0.01;
 	//mesh.rotation.y += 0.02;
 
-	score();
-	updatePlayer();
-	checkBlockHit();
-	if(alive == 1){
-		if(gameReset == 1){
-			console.log('RESET!!!!' + gameReset);
-			resetGame();
-		}
-		//mesh.position.x =0;
-		//mesh.position.z =0;
-		//mesh.remove(camera);
-		camera.position.x = lastPosition.x-10;
-		camera.position.y = lastPosition.y+10;
-		camera.position.z = lastPosition.z-10;
-		timeDead++;
-		//alive =0;
-		pauseMenu(1);
-		mesh.position.y += GRAVITY_RATE*player.downSpeed;
-		player.downSpeed +=  0.002;
-		
-		//if(player.speed>0.1)
-		//player.speed = player.speed + GRAVITY_RATE*timeDead;
-	}
-
-
-	//iterate through stack of blocks, whichever were hit, make them fall
-	for(var i=0; i<300; i++){
-		if(stack[i].hit == 1){
-			if(stack[i].deathTimeout <40){
-				stack[i].deathTimeout++;
-			}
-			else{
-				stack[i].position.y -= 0.1;
-			}
-		}
-	}
-	
-	//if(keyboard[32]){ // W key
-	if (pressed == 1 && alive == 0){
-		if(player.direction == 0)
-			player.direction = 1;
-		else
-			player.direction = 0;
-		//keyboard[32] = false;
-		pressed =2;
-		//camera.position.x -= Math.sin(camera.rotation.y) * player.speed;
-		//camera.position.z -= -Math.cos(camera.rotation.y) * player.speed;
+	updateBall();
+	playerHit();
+	ballHit();
+	if(keyboard[87]){ // W key
+		camera.position.x -= Math.sin(camera.rotation.y) * player.speed;
+		camera.position.z -= -Math.cos(camera.rotation.y) * player.speed;
 	}
 	if(keyboard[83]){ // S key
 		camera.position.x += Math.sin(camera.rotation.y) * player.speed;
 		camera.position.z += -Math.cos(camera.rotation.y) * player.speed;
 	}
 	if(keyboard[65]){ // A key
-		camera.position.x += Math.sin(camera.rotation.y + Math.PI/2) * player.speed;
-		camera.position.z += -Math.cos(camera.rotation.y + Math.PI/2) * player.speed;
+		//camera.position.x += Math.sin(camera.rotation.y + Math.PI/2) * player.speed;
+		//camera.position.z += -Math.cos(camera.rotation.y + Math.PI/2) * player.speed;
+		block.position.x -= 0.35;
 	}
 	if(keyboard[68]){ // D key
-		camera.position.x += Math.sin(camera.rotation.y - Math.PI/2) * player.speed;
-		camera.position.z += -Math.cos(camera.rotation.y - Math.PI/2) * player.speed;
+		//camera.position.x += Math.sin(camera.rotation.y - Math.PI/2) * player.speed;
+		//camera.position.z += -Math.cos(camera.rotation.y - Math.PI/2) * player.speed;
+		block.position.x += 0.35;
 	}
 	
 	if(keyboard[37]){ // left arrow key
@@ -467,21 +238,10 @@ function animate(){
 
 function keyDown(event){
 	keyboard[event.keyCode] = true;
-	if(event.keyCode == 32 && pressed == 0)
-		pressed = 1;
-	if(event.keyCode == 27 && alive != 1){
-		paused ==1 ? paused = 0 : paused = 1;
-	}
-	if(event.keyCode == 13){
-		gameReset = 1;
-	}
-
 }
 
 function keyUp(event){
 	keyboard[event.keyCode] = false;
-	if(event.keyCode == 32 && pressed == 2)
-		pressed = 0;
 }
 
 window.addEventListener('keydown', keyDown);
